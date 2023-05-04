@@ -1,1 +1,1 @@
-Fetch Latest Laravel Jobs on Freelancer.com and generate proposal if you need
+Debug You Laravel app inside VSCode
