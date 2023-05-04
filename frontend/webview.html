@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+
+<body class="bg-gray-100 text-black">
+    <div class="meta p-4 bg-white">
+        <table id="meta" class="table-auto w-full text-left">
+            <!-- Meta data will be displayed here -->
+        </table>
+    </div>
+
+    <div class="events p-4">
+        <div id="events">
+            <!-- Events will be displayed here -->
+        </div>
+    </div>
+
+    <script>
+        // Listen for messages from the extension
+        window.addEventListener('message', (event) => {
+            const data = event.data;
+            handleIncomingEvent(data);
+        });
+
+        function handleIncomingEvent(data) {
+            const meta = document.getElementById('meta');
+            const events = document.getElementById('events');
+
+            // Update the meta data
+            let metaData = '';
+            const metaKeys = Object.keys(data.meta);
+            metaData += '<tr>';
+            metaKeys.forEach(key => {
+                metaData += `<th class="font-bold">${key}</th>`;
+            });
+            metaData += '</tr><tr>';
+            metaKeys.forEach(key => {
+                metaData += `<td>${data.meta[key]}</td>`;
+            });
+            metaData += '</tr>';
+            meta.innerHTML = metaData;
+
+            const color = findColorInPayloads(data.payloads);
+
+            // Process payloads
+            data.payloads.forEach((item) => {
+                const type = item.type;
+                const content = item.content;
+                const origin = item.origin;
+
+                let eventElement;
+
+                // Handle different types
+                if (type === 'log') {
+                    eventElement = handleLogEvent(content, origin, color);
+                } else if (type === 'executed_query') {
+                    eventElement = handleExecutedQuery(content, origin);
+                } else if (type === 'custom') {
+                    eventElement = handleCustomEvent(content, origin);
+                } else {
+                    eventElement = document.createElement('pre');
+                    eventElement.className = 'bg-gray-100 p-2 rounded';
+                    eventElement.textContent = JSON.stringify(item, null, 2);
+                }
+
+                if (eventElement) {
+                    events.appendChild(eventElement);
+                }
+            });
+        }
+
+        function findColorInPayloads(payloads) {
+            let color = null;
+            payloads.forEach((payload) => {
+                if (payload.type === 'color') {
+                    color = payload.content.color;
+                }
+            });
+            return color;
+        }
+
+        function handleLogEvent(content, origin, color) {
+            const container = document.createElement('div');
+            container.className = 'bg-white p-4 my-2 rounded-md relative';
+
+            const title = document.createElement('h4');
+            title.className = 'text-blue font-bold';
+            title.innerText = 'Log Event';
+
+            const values = document.createElement('pre');
+            values.className = 'bg-gray p-2 rounded';
+            values.textContent = content.values.join(', ');
+
+            if (color) {
+                values.style.backgroundColor = color;
+            }
+
+            const fileName = origin.file.split('/').pop(); // Get the file name only
+            const originInfo = document.createElement('p');
+            originInfo.className = 'text-blue text-sm mt-1 mb-2 mr-2';
+            originInfo.innerHTML = `${fileName}:${origin.line_number}`; // Remove the hostname
+
+            container.appendChild(title);
+            container.appendChild(values);
+            container.appendChild(originInfo);
+
+            return container;
+        }
+
+        function handleCustomEvent(content, origin) {
+            const container = document.createElement('div');
+            container.className = 'bg-white p-4 my-2 rounded-md relative';
+
+            const title = document.createElement('h4');
+            title.className = 'text-blue font-bold';
+            title.innerText = content.label || 'Custom Event';
+
+            const customContent = document.createElement('div');
+            customContent.className = 'bg-gray p-2 rounded';
+            customContent.innerHTML = content.content;
+
+            const fileName = origin.file.split('/').pop(); // Get the file name only
+            const originInfo = document.createElement('small');
+            originInfo.className = 'text-green text-sm mt-1 mb-2 mr-2';
+            originInfo.innerHTML = `${fileName}:${origin.line_number}`; // Remove the hostname
+
+            container.appendChild(title);
+            container.appendChild(customContent);
+            container.appendChild(originInfo);
+
+            return container;
+        }
+
+        function handleExecutedQuery(content, origin) {
+            const container = document.createElement('div');
+            container.className = 'bg-white p-4 my-2 rounded-md relative';
+
+            const title = document.createElement('h4');
+            title.className = 'text-black-700 font-bold';
+            title.innerText = 'Executed Query';
+
+            const appliedQuery = applyBindings(content.sql, content.bindings);
+            const query = document.createElement('pre');
+            query.className = 'bg-gray-100 p-2 rounded';
+            query.textContent = appliedQuery;
+
+            const connectionInfo = document.createElement('p');
+            connectionInfo.className = 'text-gray-700 text-sm mt-1';
+            connectionInfo.innerHTML = `Connection: ${content.connection_name} <br> Time: ${content.time} ms`;
+
+
+            const fileName = origin.file.split('/').pop(); // Get the file name only
+            const originInfo = document.createElement('p');
+            originInfo.className = 'text-black-500 text-sm mt-1 mb-2 mr-2';
+            originInfo.innerHTML = `${fileName}:${origin.line_number}`; // Remove the hostname
+
+            container.appendChild(title);
+            container.appendChild(query);
+            container.appendChild(connectionInfo);
+            container.appendChild(originInfo);
+
+            return container;
+        }
+
+        function applyBindings(sql, bindings) {
+            let query = sql;
+            bindings.forEach((binding) => {
+                query = query.replace("?",  "'" + binding + "'");
+            });
+            return query;
+        }
+
+    </script>
+</body>
+
+</html>
