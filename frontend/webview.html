@@ -4,177 +4,278 @@
 <head>
     <meta charset="utf-8">
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 </head>
 
 <body class="bg-gray-100 text-black">
-    <div class="meta p-4 bg-white">
-        <table id="meta" class="table-auto w-full text-left">
-            <!-- Meta data will be displayed here -->
-        </table>
-    </div>
 
-    <div class="events p-4">
-        <div id="events">
-            <!-- Events will be displayed here -->
+    <div id="app">
+        <div class="flex justify-between items-center p-4">
+            <button v-if="events.length > 0"
+                class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" @click="clearEvents">
+                Clear Screen
+            </button>
+        </div>
+        <div class="flex justify-between items-center p-4">
+            <button v-if="events.length > 0"
+                class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" @click="reload">
+                Reload
+            </button>
+        </div>
+        <div class="events p-4">
+            <div id="events">
+                <!-- Events will be displayed here -->
+            </div>
         </div>
     </div>
 
     <script>
-        // Listen for messages from the extension
-        window.addEventListener('message', (event) => {
-            const data = event.data;
-            handleIncomingEvent(data);
-        });
+        // reverse the order of the events
+        const app = new Vue({
+            el: '#app',
+            data: {
+                events: []
+            },
+            methods: {
+                handleIncomingEvent(event) {
+                    event.payload = event.payloads.filter((payload) => {
+                        return payload.type !== 'color';
+                    });
 
-        function handleIncomingEvent(data) {
-            const meta = document.getElementById('meta');
-            const events = document.getElementById('events');
+                    this.events.push(event);
 
-            // Update the meta data
-            let metaData = '';
-            const metaKeys = Object.keys(data.meta);
-            metaData += '<tr>';
-            metaKeys.forEach(key => {
-                metaData += `<th class="font-bold">${key}</th>`;
-            });
-            metaData += '</tr><tr>';
-            metaKeys.forEach(key => {
-                metaData += `<td>${data.meta[key]}</td>`;
-            });
-            metaData += '</tr>';
-            meta.innerHTML = metaData;
+                    event.payload.forEach((item) => {
+                        const type = item.type;
+                        const content = item.content;
+                        const origin = item.origin;
 
-            const color = findColorInPayloads(data.payloads);
+                        let eventElement;
 
-            // Process payloads
-            data.payloads.forEach((item) => {
-                const type = item.type;
-                const content = item.content;
-                const origin = item.origin;
+                        // Handle different types
+                        if (type === 'log') {
+                            eventElement = this.handleLogEvent(item, event);
+                        } else if (type === 'executed_query') {
+                            eventElement = this.handleExecutedQuery(item, event);
+                        } else if (type === 'custom') {
+                            eventElement = this.handleCustomEvent(item, event);
+                        } else if (type === 'eloquent_model') {
+                            eventElement = this.handleEloquentModelEvent(item, event);
+                        } else if (type === 'application_log') {
+                            eventElement = this.handleApplicationLogEvent(item, event);
+                        } else {
+                            eventElement = document.createElement('pre');
+                            eventElement.className = 'bg-gray-100 p-2 rounded';
+                            eventElement.textContent = JSON.stringify(item, null, 2);
+                        }
 
-                let eventElement;
+                        if (eventElement) {
+                            const events = document.getElementById('events');
+                            events.insertBefore(eventElement, events.firstChild);
+                        }
+                    });
+                },
+                findColorInPayloads(payloads) {
+                    let color = null;
+                    payloads.forEach((payload) => {
+                        if (payload.type === 'color') {
+                            color = payload.content.color;
+                        }
+                    });
+                    return color;
+                },
+                handleEloquentModelEvent(item, event) {
+                    const content = item.content;
+                    const container = document.createElement('div');
+                    container.className = 'bg-white p-4 my-2 rounded-md relative';
 
-                // Handle different types
-                if (type === 'log') {
-                    eventElement = handleLogEvent(content, origin, color);
-                } else if (type === 'executed_query') {
-                    eventElement = handleExecutedQuery(content, origin);
-                } else if (type === 'custom') {
-                    eventElement = handleCustomEvent(content, origin);
-                } else {
-                    eventElement = document.createElement('pre');
-                    eventElement.className = 'bg-gray-100 p-2 rounded';
-                    eventElement.textContent = JSON.stringify(item, null, 2);
+                    const title = document.createElement('h4');
+                    title.className = 'text-blue font-bold';
+                    title.innerText = 'Eloquent Model';
+
+                    const values = document.createElement('pre');
+                    values.className = 'bg-gray p-2 rounded';
+                    values.textContent = content.class_name;
+                    // content.attributes contains javascript script tag contains laravel dump output
+                    // so we need to run it inside the webview
+                    const script = document.createElement('div');
+                    script.innerHTML = content.attributes;
+                    values.appendChild(script);
+
+                    container.appendChild(title);
+                    container.appendChild(values);
+                    container.appendChild(this.buildEventInfoFooter(item, event));
+
+                    return container;
+                },
+                handleLogEvent(item, event) {
+                    const content = item.content;
+                    const container = document.createElement('div');
+                    container.className = 'bg-white p-4 my-2 rounded-md relative';
+
+                    const title = document.createElement('h4');
+                    title.className = 'text-blue font-bold';
+                    title.innerText = 'Log Event';
+
+                    const log = document.createElement('pre');
+                    log.className = 'bg-gray p-2 rounded';
+                    log.innerHTML = content.values.join(' ')
+
+                    container.appendChild(title);
+                    container.appendChild(log);
+                    container.appendChild(this.buildEventInfoFooter(item, event));
+
+                    return container;
+                },
+
+                handleApplicationLogEvent(item, event) {
+                    const color = "red";
+                    const content = item.content;
+                    const container = document.createElement('div');
+                    container.className = 'p-4 my-2 rounded-md relative';
+
+                    const title = document.createElement('h4');
+                    title.className = "text-" + color + " font-bold";
+                    title.innerText = 'Application Log Event';
+
+                    // LOG LEVEL
+                    const log = document.createElement('div');
+                    log.className = 'bg-gray p-2 rounded';
+                    // label
+                    const label = document.createElement('div');
+                    label.className = 'text-gray-500';
+                    label.innerText = content.value;
+
+                    // content
+                    const contentElement = document.createElement('div');
+                    contentElement.className = 'text-gray-900';
+                    contentElement.innerHTML = content.context;
+
+                    log.appendChild(label);
+                    log.appendChild(contentElement);
+
+                    container.appendChild(title);
+                    container.appendChild(log);
+                    container.appendChild(this.buildEventInfoFooter(item, event));
+
+                    return container;
+                },
+
+                handleCustomEvent(item, event) {
+                    const content = item.content;
+                    const container = document.createElement('div');
+                    container.className = 'bg-white p-4 my-2 rounded-md relative';
+
+                    const title = document.createElement('h4');
+                    title.className = 'text-blue font-bold';
+                    title.innerText = content.label;
+
+                    const values = document.createElement('pre');
+                    values.className = 'bg-gray p-2 rounded';
+                    values.innerHTML = content.content;
+
+                    container.appendChild(title);
+                    container.appendChild(values);
+                    container.appendChild(this.buildEventInfoFooter(item, event));
+
+                    return container;
+                },
+
+                applyBindings(sql, bindings) {
+                    let query = sql;
+                    bindings.forEach((binding) => {
+                        query = query.replace("?", "'" + binding + "'");
+                    });
+                    return query;
+                },
+
+                handleExecutedQuery(item, event) {
+                    const content = item.content;
+                    const container = document.createElement('div');
+                    container.className = 'bg-white p-4 my-2 rounded-md relative';
+
+                    const title = document.createElement('h4');
+                    title.className = 'text-blue font-bold';
+                    title.innerText = 'Executed Query';
+
+                    const sql = document.createElement('pre');
+                    sql.className = 'bg-gray p-2 rounded';
+                    sql.textContent = this.applyBindings(content.sql, content.bindings);
+
+                    container.appendChild(title);
+                    container.appendChild(sql);
+                    container.appendChild(this.buildEventInfoFooter(item, event));
+                    return container;
+                },
+                buildEventInfoFooter(item, event) {
+                    const footer = document.createElement('div');
+                    footer.className = 'flex justify-between items-center';
+
+                    const origin = document.createElement('div');
+                    let file = item.origin.file.split('/').pop();
+                    origin.textContent = file + ':' + item.origin.line_number + ' - ' + item.origin.hostname;
+
+                    const time = document.createElement('div');
+                    time.className = 'text-xs text-gray-500';
+                    time.textContent = event.time;
+
+                    footer.appendChild(origin);
+                    footer.appendChild(time);
+
+                    return footer;
+                },
+
+                clearEvents() {
+                    axios.post('http://laravel.test/api/clear-events')
+                        .then((response) => {
+                            this.events = [];
+                            document.getElementById('events').innerHTML = '';
+                        });
+                },
+
+                loadEvents() {
+                    axios.get('http://laravel.test/api/events').then((response) => {
+                        response.data.forEach((event) => {
+                            // decode the payload if it's a string
+                            if (typeof event === 'string') {
+                                event = JSON.parse(event);
+                            }
+
+                            this.handleIncomingEvent(event);
+                        });
+                    });
+                },
+
+                reload() {
+                    this.events = [];
+                    document.getElementById('events').innerHTML = '';
+                    this.loadEvents();
                 }
+            },
+            mounted() {
+                // load events from the server
+                this.loadEvents();
 
-                if (eventElement) {
-                    events.appendChild(eventElement);
-                }
-            });
-        }
+                window.addEventListener('message', (event) => {
+                    let data = event.data;
+                    var timeNow = new Date();
+                    data.time = timeNow.getHours() + ":" + timeNow.getMinutes() + ":" + timeNow.getSeconds();
 
-        function findColorInPayloads(payloads) {
-            let color = null;
-            payloads.forEach((payload) => {
-                if (payload.type === 'color') {
-                    color = payload.content.color;
-                }
-            });
-            return color;
-        }
-
-        function handleLogEvent(content, origin, color) {
-            const container = document.createElement('div');
-            container.className = 'bg-white p-4 my-2 rounded-md relative';
-
-            const title = document.createElement('h4');
-            title.className = 'text-blue font-bold';
-            title.innerText = 'Log Event';
-
-            const values = document.createElement('pre');
-            values.className = 'bg-gray p-2 rounded';
-            values.textContent = content.values.join(', ');
-
-            if (color) {
-                values.style.backgroundColor = color;
-            }
-
-            const fileName = origin.file.split('/').pop(); // Get the file name only
-            const originInfo = document.createElement('p');
-            originInfo.className = 'text-blue text-sm mt-1 mb-2 mr-2';
-            originInfo.innerHTML = `${fileName}:${origin.line_number}`; // Remove the hostname
-
-            container.appendChild(title);
-            container.appendChild(values);
-            container.appendChild(originInfo);
-
-            return container;
-        }
-
-        function handleCustomEvent(content, origin) {
-            const container = document.createElement('div');
-            container.className = 'bg-white p-4 my-2 rounded-md relative';
-
-            const title = document.createElement('h4');
-            title.className = 'text-blue font-bold';
-            title.innerText = content.label || 'Custom Event';
-
-            const customContent = document.createElement('div');
-            customContent.className = 'bg-gray p-2 rounded';
-            customContent.innerHTML = content.content;
-
-            const fileName = origin.file.split('/').pop(); // Get the file name only
-            const originInfo = document.createElement('small');
-            originInfo.className = 'text-green text-sm mt-1 mb-2 mr-2';
-            originInfo.innerHTML = `${fileName}:${origin.line_number}`; // Remove the hostname
-
-            container.appendChild(title);
-            container.appendChild(customContent);
-            container.appendChild(originInfo);
-
-            return container;
-        }
-
-        function handleExecutedQuery(content, origin) {
-            const container = document.createElement('div');
-            container.className = 'bg-white p-4 my-2 rounded-md relative';
-
-            const title = document.createElement('h4');
-            title.className = 'text-black-700 font-bold';
-            title.innerText = 'Executed Query';
-
-            const appliedQuery = applyBindings(content.sql, content.bindings);
-            const query = document.createElement('pre');
-            query.className = 'bg-gray-100 p-2 rounded';
-            query.textContent = appliedQuery;
-
-            const connectionInfo = document.createElement('p');
-            connectionInfo.className = 'text-gray-700 text-sm mt-1';
-            connectionInfo.innerHTML = `Connection: ${content.connection_name} <br> Time: ${content.time} ms`;
+                    axios.post('http://laravel.test/api/save-to-redis', {
+                        payload: data
+                    }).then((response) => {
+                    }, (error) => {
+                    });
 
 
-            const fileName = origin.file.split('/').pop(); // Get the file name only
-            const originInfo = document.createElement('p');
-            originInfo.className = 'text-black-500 text-sm mt-1 mb-2 mr-2';
-            originInfo.innerHTML = `${fileName}:${origin.line_number}`; // Remove the hostname
+                    this.handleIncomingEvent(data);
+                });
+            },
 
-            container.appendChild(title);
-            container.appendChild(query);
-            container.appendChild(connectionInfo);
-            container.appendChild(originInfo);
 
-            return container;
-        }
-
-        function applyBindings(sql, bindings) {
-            let query = sql;
-            bindings.forEach((binding) => {
-                query = query.replace("?",  "'" + binding + "'");
-            });
-            return query;
-        }
-
+        })
     </script>
+
 </body>
 
 </html>

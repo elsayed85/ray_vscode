@@ -25,9 +25,6 @@ function startServer() {
 	app.post('/', (req, res) => {
 		const payload = req.body;
 
-		// Process the payload here
-		console.log(payload);
-
 		// Send the payload to the webview panel
 		if (eventsWebviewPanel) {
 			eventsWebviewPanel.webview.postMessage(payload);
